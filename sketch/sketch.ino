@@ -1,4 +1,5 @@
 #include <MiniTimerOne.h>
+#include <TimerOne.h>
 #define EI_ARDUINO_INTERRUPTED_PIN
 
 #include <EnableInterrupt.h>
@@ -13,7 +14,7 @@
 #define LED_1 7
 #define LED_2 8
 #define LED_3 9
-#define TMIN 1000000
+#define TMIN 2000000
 #define LEVEL_GAP_PERCENTAGE 5 //PERCENTUALE DI DIMINUZIONE DI TEMPO DI OGNI LIVELLO 
 #define K 2
 
@@ -25,7 +26,7 @@
 #define LED_ON 1
 #define LED_OFF 0
 
-#define BOUNCE_DELAY 100
+#define BOUNCE_DELAY 800
 
 uint32_t last_interrupt_time = 0;
 
@@ -34,14 +35,14 @@ int score;
 int currIntensity = 0;
 int fadeAmount = 5;
 int level;
-int indexLedOn;
-long currentTmin;
-long currentTmax;
-int currentGameState;
-int led_state = LED_OFF;
+volatile int indexLedOn;
+unsigned long int currentTmin;
+unsigned long int currentTmax;
+volatile int currentGameState;
+volatile int led_state = LED_OFF;
 unsigned char currentLedOn;
-unsigned char leds[4];
-unsigned char buttons[4];
+volatile unsigned char leds[4];
+volatile unsigned char buttons[4];
 
 void setup() {
   Serial.begin(9600);
@@ -49,34 +50,33 @@ void setup() {
   Serial.println("Press key T1 to start");
   initializePins();
   currentGameState = WAITING_PLAYER;
-  enableInterrupt(buttons[0],setupGame,FALLING);
+  enableInterrupt(buttons[0],setupGame,FALLING);//INTERRUPT ASSOCIATA AL BOTTONE T1 PER INIZIARE LA PARTITA
 }
 
 void loop() {
   if(currentGameState == WAITING_PLAYER){
     fade(LED_START);
   }else if(currentGameState == SETUP_GAME){
-    Serial.println("Go!");
     digitalWrite(LED_START,LOW);
     score = 0;
     level = map(analogRead(POT),0,1023,0,7);
     currentTmin = TMIN -(TMIN * LEVEL_GAP_PERCENTAGE * level / 100);
     currentTmax = currentTmin * K;
     indexLedOn = random(0,4);
-    manageInterrupts();
+    manageInterrupts(); //ASSEGNA LE INTERRUZIONI AI BOTTONI 
     currentGameState = IN_GAME;
-    MiniTimer1.init();
+    Serial.println("Go!");
   }else if(currentGameState == IN_GAME) {
-    if(led_state == LED_OFF){
+    if(led_state == LED_OFF){// CICLO PER NON ACCENDERE IL LED DI CONTINUO
         digitalWrite(leds[indexLedOn],HIGH);
         led_state = LED_ON;
-        setTimeoutTimer();
+        setTimeoutTimer();// FUNZIONE PER FARE PARTIRE IL TIMER DI SCADENZA
     }
   }else if(currentGameState == GAME_OVER){
     // STAMPA SCORE
     // RICHIAMA SETUP
     //SPEGNI ULTIMO LED VERDE E CHIAMA SETUP()
-    setup();
+    currentGameState = WAITING_PLAYER;
   }
   
 }
@@ -84,13 +84,13 @@ void setupGame(){
     currentGameState = SETUP_GAME;
 }
 
-long getAvailableTime(){
+unsigned long int getAvailableTime(){
       if (score>0){
       currentTmin = currentTmin - (currentTmin *7/8);
       currentTmax = currentTmin * K;
       return random(currentTmin,currentTmax);
       }else{
-        currentTmax = currentTmin * K;
+        currentTmax = currentTmin * K;      
         return random(currentTmin,currentTmax);
       }
 }
@@ -101,7 +101,7 @@ void fade(int LED_PIN){
   if (currIntensity == 0 || currIntensity == 255) {
     fadeAmount = -fadeAmount ; 
   }
-  delay(20);
+  delayMicroseconds(20000);
 }
 
 void initializePins(){
@@ -126,7 +126,7 @@ void manageInterrupts(){
     if(i == indexLedOn){
        enableInterrupt(buttons[i],nextLed,FALLING);
     }else{
-       enableInterrupt(buttons[i],setGameOver,FALLING);
+       enableInterrupt(buttons[i],setGameOverFromButton,FALLING);
     }
     
   }
@@ -142,14 +142,27 @@ void nextLed(){
 }
 
 void setTimeoutTimer(){ //FUNZIONE PER SETTARE IL TEMPO OGNI VOLTA CHE SI ACCENDE UN NUOVO LED DOPO CHE IL GIOCATORE PREME IL BOTTONE
-        MiniTimer1.setPeriod(getAvailableTime());
         MiniTimer1.attachInterrupt(setGameOver);
+        MiniTimer1.setPeriod(getAvailableTime());
         MiniTimer1.start();
 }
 
 void setGameOver(){
   if(!bouncing()){
   Serial.println("GAME OVER!");
+  MiniTimer1.stop();
+  MiniTimer1.detachInterrupt();
+  MiniTimer1.reset();
+  currentGameState = GAME_OVER;
+  }
+}
+
+void setGameOverFromButton(){
+  if(!bouncing()){
+  Serial.println(String("GAME OVER FROM BUTTON : ")+ arduinoInterruptedPin );
+  MiniTimer1.stop();
+  MiniTimer1.detachInterrupt();
+  MiniTimer1.reset();
   currentGameState = GAME_OVER;
   }
 }
