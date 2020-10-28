@@ -1,3 +1,5 @@
+// ACAMPORA ANDREA - 0000873699
+// ACCURSI GIACOMO - 0000883208
 #include <MiniTimerOne.h>
 #include <TrueRandom.h>
 #define EI_ARDUINO_INTERRUPTED_PIN
@@ -13,16 +15,16 @@
 #define LED_1 7
 #define LED_2 8
 #define LED_3 9
-#define TMIN 1000000
+#define TMIN 1500000
 #define LEVEL_GAP_PERCENTAGE 5 //PERCENTUALE DI DIMINUZIONE DI TEMPO DI OGNI LIVELLO 
-#define K 3
+#define K 2.5 //FATTORE PER IL QUALE VIENE MOLTIPLICATO TMIN PER OTTENERE TMAX (TMAX-TIM = INTERVALLO GENERALE DI TEMPO A DISPOSIZIONE DEL PLAYER)
 #define WAITING_PLAYER 0
 #define SETUP_GAME 1
 #define IN_GAME 2
 #define GAME_OVER 3
 #define LED_ON 1
-#define LED_OFF 0
-#define BOUNCE_DELAY 160
+#define LED_TRACKED 0
+#define BOUNCE_DELAY 160 //TEMPO NECESSARIO INDIVIDUATO DOPO NUMEROSE PROVE PER EVITARE BOUNCING CON I PULSANTI A DISPOSIZIONE
 
 uint32_t last_interrupt_time = 0;
 volatile int score;
@@ -34,7 +36,7 @@ volatile int indexLedOn;
 unsigned long int currentTmin;
 unsigned long int currentTmax;
 volatile int gameState;
-volatile int led_state = LED_OFF;
+volatile int led_state;
 unsigned char leds[4];
 unsigned char buttons[4];
 
@@ -56,49 +58,52 @@ void loop() {
   if(currentGameState == WAITING_PLAYER){
     fadeStep();
   }else if(currentGameState == SETUP_GAME){
-    digitalWrite(LED_START,LOW);
+    switchOffLed(LED_START);
     score = 0;
     level = map(analogRead(POT),0,1023,0,7);
     currentTmin = TMIN -(TMIN * LEVEL_GAP_PERCENTAGE * level / 100);
     currentTmax = currentTmin * K;
     indexLedOn = TrueRandom.random(0,4);
     gameState = IN_GAME;
-    Serial.println("Go!");
+    Serial.println("\nGo!");
   }else if(currentGameState == IN_GAME) {
     noInterrupts();
     int currentLedState = led_state;
     interrupts();
-    if(currentLedState == LED_OFF){// CICLO PER NON ACCENDERE IL LED DI CONTINUO
-        digitalWrite(leds[indexLedOn],HIGH);
-        led_state = LED_ON;
-        manageInterrupts();
-        setTimeoutTimer();// FUNZIONE PER FARE PARTIRE IL TIMER DI SCADENZA
-        if (score!=0){
-          Serial.println(String("Tracking the fly pos: ")+(indexLedOn+1));
-        }
+    if(currentLedState == LED_TRACKED){// CICLO PER NON ACCENDERE IL LED DI CONTINUO
+      noInterrupts();
+      int currentIndexLedOn = indexLedOn;
+      interrupts();
+      digitalWrite(leds[currentIndexLedOn],HIGH);
+      led_state = LED_ON;
+      manageInterrupts();
+      setTimeoutTimer();// FUNZIONE PER FARE PARTIRE IL TIMER DI SCADENZA
+      Serial.println(String("Tracking the fly pos: ")+(currentIndexLedOn+1));
     }
   }else if(currentGameState == GAME_OVER){
-    digitalWrite(leds[indexLedOn],LOW);
-    led_state = LED_OFF;
-    Serial.println(String("GAME OVER! - SCORE : ") +score);
+    noInterrupts();/*Salvo il punteggio finale con le interrupts disabilitate perchè sono ancora attive sui bottoni e potrebbero incrementare il punteggio a tempo scaduto*/
+    int finalScore = score;
+    interrupts();
+    switchOffLed(leds[indexLedOn]);
+    Serial.println(String("GAME OVER! - SCORE : ") +finalScore);
     digitalWrite(LED_START,HIGH);
     delay(2000);
     gameState = WAITING_PLAYER;
     reinitializeInterrupts();
   }
-  
 }
+
 void setupGame(){
     if(!bouncing()){
-    gameState = SETUP_GAME;
+      gameState = SETUP_GAME;
     }
 }
 
 unsigned long int getAvailableTime(){
       if (score>0){
-      currentTmin = currentTmin * 7/8;
-      currentTmax = currentTmin * K;
-      return TrueRandom.random(currentTmin,currentTmax);
+        currentTmin = currentTmin * 7/8;
+        currentTmax = currentTmin * K;
+        return TrueRandom.random(currentTmin,currentTmax);
       }else{
         currentTmax = currentTmin * K;      
         return TrueRandom.random(currentTmin,currentTmax);
@@ -134,21 +139,20 @@ void initializePins(){
 void manageInterrupts(){
   for (int i = 0 ; i<=3 ; i++){
     if(i == indexLedOn){
-       enableInterrupt(buttons[i],nextLed,FALLING);
+       enableInterrupt(buttons[i],ledTracked,FALLING);
     }else{
        enableInterrupt(buttons[i],setGameOver,FALLING);
     }
   }
 }
 
-void nextLed(){
+
+void ledTracked(){
   if(!bouncing()){
-      MiniTimer1.stop();
-      MiniTimer1.reset(); 
-      score = score +1;
-      digitalWrite(leds[indexLedOn],LOW);
+      stopAndResetTimer();
+      updateScore();
+      switchOffLed(leds[indexLedOn]);
       indexLedOn = getAdjacentLed();
-      led_state = LED_OFF;
   }
 }
 
@@ -159,10 +163,6 @@ int getAdjacentLed(){
         random_vec[0] = 3;
         random_vec[1] = 1;
         break;
-      case 3 : 
-        random_vec[0] = 2;
-        random_vec[1] = 1;
-        break;
       case 1:
         random_vec[0] = 0;
         random_vec[1] = 2;
@@ -171,15 +171,31 @@ int getAdjacentLed(){
         random_vec[0] = 1;
         random_vec[1] = 3;
         break;
+      case 3 : 
+        random_vec[0] = 2;
+        random_vec[1] = 1;
+        break;
     }
     return random_vec[TrueRandom.random(0,2)];
 }
 
+void switchOffLed(int LED_PIN){
+     digitalWrite(LED_PIN,LOW);
+     led_state = LED_TRACKED;
+}
+
 void setTimeoutTimer(){ //FUNZIONE PER SETTARE IL TEMPO OGNI VOLTA CHE SI ACCENDE UN NUOVO LED DOPO CHE IL GIOCATORE PREME IL BOTTONE
-        long int timee = getAvailableTime();
-        Serial.println(timee);
-        MiniTimer1.setPeriod(timee);
-        MiniTimer1.start();
+    MiniTimer1.setPeriod(getAvailableTime());
+    MiniTimer1.start();
+}
+
+void updateScore(){
+    score = score +1;
+}
+
+void stopAndResetTimer(){
+    MiniTimer1.stop();
+    MiniTimer1.reset(); 
 }
 
 void setGameOver(){
@@ -199,7 +215,6 @@ void reinitializeInterrupts(){
 
 bool bouncing(){
   uint32_t interrupt_time = millis();
-  long int timee = interrupt_time-last_interrupt_time;
   if(interrupt_time - last_interrupt_time < BOUNCE_DELAY && oldButtonPressed==arduinoInterruptedPin ){
     last_interrupt_time = interrupt_time;
     return true;
