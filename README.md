@@ -1,6 +1,6 @@
 # Track the Led Fly
 
-### Relazione primo assignment - Sistemi Embedded & IoT
+### Assignment n° 1 - Sistemi Embedded & IoT
 
 ###### Autori: Andrea Acampora - Accursi Giacomo
 
@@ -29,4 +29,4 @@ I diversi momenti del gioco sono definiti attraverso 4 stati:
 
 I livelli di gioco sono 8 e di difficoltà crescente. Il tempo a disposizione per premere il bottone è casuale nell'intervallo (Tmin, Tmax).
 $Tmin = 1.5 - (1.5 * 5 * livello scelto / 100)$ secondi
-$Tmax = Tmin * k$ secondi $k = 2.5$
+$Tmax = Tmin * k$ secondi,  $k = 2.5$ costante per tutti i livelli
