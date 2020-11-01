@@ -79,7 +79,7 @@ void loop() {
     currentTmin = TMIN -(TMIN * LEVEL_GAP_PERCENTAGE * level / 100);
     currentTmax = currentTmin * K;
     indexLedOn = TrueRandom.random(0,4);
-    last_led_tracked = null;
+    //last_led_tracked = NULL;
     gameState = IN_GAME;
     Serial.println("\nGo!");
   }else if(currentGameState == IN_GAME) {
